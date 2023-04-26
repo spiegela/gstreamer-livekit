@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::sync::{Arc};
+use std::sync::Arc;
 
 use anyhow::anyhow;
 use gstreamer::Element;
@@ -14,7 +14,6 @@ use livekit::webrtc::{
     video_source::native::NativeVideoSource,
 };
 use livekit::webrtc::video_frame::native::I420BufferExt;
-use livekit_webrtc::native::yuv_helper;
 use tokio::sync::Mutex;
 
 use {
@@ -25,39 +24,39 @@ use {
 #[tokio::main]
 async fn main() {
     let livekit_url = getenv("LIVEKIT_URL").unwrap();
-    let liveki_api_url = getenv("LIVEKIT_API_URL").unwrap();
+    let livekit_api_url = getenv("LIVEKIT_API_URL").unwrap();
     let livekit_api_key = getenv("LIVEKIT_API_KEY").unwrap();
     let livekit_api_secret = getenv("LIVEKIT_API_SECRET").unwrap();
 
-    tokio::task::spawn_blocking(|| async move {
-        let livekit_token = create_join_token(
-            &liveki_api_url,
-            &livekit_api_key,
-            &livekit_api_secret,
-            "Default",
-            "gstreamer",
-        ).await.unwrap();
-        let source = NativeVideoSource::default();
-        let track = LocalVideoTrack::create_video_track(
-            "gstreamer-test",
-            VideoCaptureOptions::default(),
-            source.clone(),
-        );
-        tokio::spawn(track_task(source.clone()));
-        let (room, _event_ch) = Room::connect(
-            livekit_url.to_str().unwrap(),
-            livekit_token.as_str(),
-        ).await.unwrap();
-        room.session()
-            .local_participant()
-            .publish_track(
-                LocalTrack::Video(track.clone()),
-                TrackPublishOptions {
-                    source: TrackSource::Camera,
-                    ..Default::default()
-                },
-            )
-            .await.unwrap();
+    let livekit_token = create_join_token(
+        &livekit_api_url,
+        &livekit_api_key,
+        &livekit_api_secret,
+        "Default",
+        "gstreamer",
+    ).await.unwrap();
+    let (room, _event_ch) = Room::connect(
+        livekit_url.to_str().unwrap(),
+        livekit_token.as_str(),
+    ).await.unwrap();
+    let source = NativeVideoSource::default();
+    let track = LocalVideoTrack::create_video_track(
+        "gstreamer-test",
+        VideoCaptureOptions::default(),
+        source.clone(),
+    );
+    room.session()
+        .local_participant()
+        .publish_track(
+            LocalTrack::Video(track.clone()),
+            TrackPublishOptions {
+                source: TrackSource::Camera,
+                ..Default::default()
+            },
+        )
+        .await.unwrap();
+    tokio::task::spawn_blocking(|| {
+        track_task(source)
     }).await.unwrap().await;
 }
 
@@ -65,7 +64,6 @@ async fn track_task(rtc_source: NativeVideoSource) {
     let (height, width) = (720, 1280);
     gst::init().unwrap();
     let videotestsrc = ElementFactory::make("videotestsrc")
-        .property("num-buffers", &200)
         .build().unwrap();
     let caps_filter = ElementFactory::make("capsfilter")
         .property("caps", gst::Caps::builder("video/x-raw")
@@ -81,6 +79,7 @@ async fn track_task(rtc_source: NativeVideoSource) {
     Element::link_many(&[&videotestsrc, &caps_filter, &appsink]).unwrap();
 
     let app_sink = appsink.dynamic_cast::<AppSink>().unwrap();
+    pipeline.set_state(State::Playing).unwrap();
 
     let frame = Arc::new(Mutex::new(VideoFrame {
         rotation: VideoRotation::VideoRotation0,
@@ -88,16 +87,11 @@ async fn track_task(rtc_source: NativeVideoSource) {
         buffer: I420Buffer::new(1280, 720),
     }));
 
-    pipeline.set_state(State::Playing).unwrap();
-
     while let Ok(sample) = app_sink.pull_sample() {
         if let Some(sample_buffer) = sample.buffer() {
             let mut frame = frame.lock().await;
             let i420_buffer = &mut frame.buffer;
 
-            let dst_stride_y = &i420_buffer.stride_y();
-            let dst_stride_u = &i420_buffer.stride_u();
-            let dst_stride_v = &i420_buffer.stride_v();
             let (dst_y, dst_u, dst_v) = i420_buffer.data_mut();
 
             let caps = sample.caps().unwrap();
@@ -111,46 +105,10 @@ async fn track_task(rtc_source: NativeVideoSource) {
             let src_y = sample_frame.plane_data(0).unwrap();
             let src_u = sample_frame.plane_data(1).unwrap();
             let src_v = sample_frame.plane_data(2).unwrap();
-            let src_stride_y = sample_frame.plane_stride()[0];
-            let src_stride_u = sample_frame.plane_stride()[1];
-            let src_stride_v = sample_frame.plane_stride()[2];
 
-            // dst_stride_y = &src_stride_y;
-            // dst_y.copy_from_slice(src_y);
-            // dst_stride_u = &src_stride_u;
-            // dst_u.copy_from_slice(src_u);
-            // dst_stride_v = &src_stride_v;
-            // dst_v.copy_from_slice(src_v);
-
-            let mut argb_data = vec![0u8; width * height * 4];
-            let argb = argb_data.as_mut_slice();
-            let argb_stride: i32 = 0;
-
-            yuv_helper::i420_to_argb(
-                src_y,
-                src_stride_y,
-                src_u,
-                src_stride_u,
-                src_v,
-                src_stride_v,
-                argb,
-                argb_stride,
-                width as i32,
-                height as i32,
-            ).unwrap();
-
-            yuv_helper::argb_to_i420(
-                argb,
-                argb_stride,
-                dst_y,
-                *dst_stride_y,
-                dst_u,
-                *dst_stride_u,
-                dst_v,
-                *dst_stride_v,
-                width as i32,
-                height as i32,
-            ).unwrap();
+            dst_y.copy_from_slice(src_y);
+            dst_u.copy_from_slice(src_u);
+            dst_v.copy_from_slice(src_v);
 
             rtc_source.capture_frame(&*frame);
         }
