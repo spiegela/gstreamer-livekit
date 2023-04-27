@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use gstreamer::Element;
+use gstreamer::{Element, ReferenceTimestampMeta};
 use gstreamer::glib::getenv;
 use gstreamer::prelude::*;
 use gstreamer_app::gst;
@@ -35,6 +35,7 @@ async fn main() {
             can_publish_data: true,
             can_publish_sources: vec!["Camera".to_string(), "Microphone".to_string()],
             can_update_own_metadata: true,
+            room: "Default".to_string(),
             ..Default::default()
         }).to_jwt().unwrap();
 
@@ -58,15 +59,18 @@ async fn main() {
             },
         )
         .await.unwrap();
-    tokio::task::spawn_blocking(|| {
+    tokio::task::spawn_blocking(|| unsafe {
         track_task(source)
     }).await.unwrap().await;
 }
 
-async fn track_task(rtc_source: NativeVideoSource) {
+async unsafe fn track_task(rtc_source: NativeVideoSource) {
     let (height, width) = (720, 1280);
     gst::init().unwrap();
     let videotestsrc = ElementFactory::make("videotestsrc")
+        .build().unwrap();
+    let audiotestsrc = ElementFactory::make("audiotestsrc")
+        .property("wave", 4)
         .build().unwrap();
     let caps_filter = ElementFactory::make("capsfilter")
         .property("caps", gst::Caps::builder("video/x-raw")
@@ -75,11 +79,12 @@ async fn track_task(rtc_source: NativeVideoSource) {
             .field("height", height as i32)
             .build(),
         ).build().unwrap();
+
     let appsink = ElementFactory::make("appsink").build().unwrap();
 
     let pipeline = Pipeline::new(None);
     pipeline.add_many(&[&videotestsrc, &caps_filter, &appsink]).unwrap();
-    Element::link_many(&[&videotestsrc, &caps_filter, &appsink]).unwrap();
+    Element::link_many(&[&videotestsrc, &videotestsrc, &caps_filter, &appsink]).unwrap();
 
     let app_sink = appsink.dynamic_cast::<AppSink>().unwrap();
     pipeline.set_state(State::Playing).unwrap();
@@ -99,6 +104,10 @@ async fn track_task(rtc_source: NativeVideoSource) {
 
             let caps = sample.caps().unwrap();
             let video_info = gstreamer_video::VideoInfo::from_caps(caps).unwrap();
+            let mut ts = 0;
+            if let Some(meta) = sample_buffer.meta::<ReferenceTimestampMeta>() {
+                ts = meta.timestamp().into_raw_value();
+            }
             let sample_frame =
                 gstreamer_video::video_frame::VideoFrame::from_buffer_readable(
                     sample_buffer.copy(),
@@ -112,6 +121,7 @@ async fn track_task(rtc_source: NativeVideoSource) {
             dst_y.copy_from_slice(src_y);
             dst_u.copy_from_slice(src_u);
             dst_v.copy_from_slice(src_v);
+            frame.timestamp = ts;
 
             rtc_source.capture_frame(&*frame);
         }
