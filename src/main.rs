@@ -1,8 +1,6 @@
-use std::collections::HashMap;
-use std::ffi::OsStr;
 use std::sync::Arc;
+use std::time::Duration;
 
-use anyhow::anyhow;
 use gstreamer::Element;
 use gstreamer::glib::getenv;
 use gstreamer::prelude::*;
@@ -14,6 +12,7 @@ use livekit::webrtc::{
     video_source::native::NativeVideoSource,
 };
 use livekit::webrtc::video_frame::native::I420BufferExt;
+use livekit_api::access_token::{AccessToken, VideoGrants};
 use tokio::sync::Mutex;
 
 use {
@@ -23,18 +22,22 @@ use {
 
 #[tokio::main]
 async fn main() {
-    let livekit_url = getenv("LIVEKIT_URL").unwrap();
-    let livekit_api_url = getenv("LIVEKIT_API_URL").unwrap();
-    let livekit_api_key = getenv("LIVEKIT_API_KEY").unwrap();
-    let livekit_api_secret = getenv("LIVEKIT_API_SECRET").unwrap();
+    // let livekit_url = getenv("LIVEKIT_URL").unwrap();
+    let livekit_url = getenv("LIVEKIT_WSS_URL").unwrap();
+    let livekit_token = AccessToken::new()
+        .unwrap()
+        .with_ttl(Duration::from_secs(3600))
+        .with_identity("gstreamer")
+        .with_name("gstreamer")
+        .with_grants(VideoGrants {
+            room_join: true,
+            can_publish: true,
+            can_publish_data: true,
+            can_publish_sources: vec!["Camera".to_string(), "Microphone".to_string()],
+            can_update_own_metadata: true,
+            ..Default::default()
+        }).to_jwt().unwrap();
 
-    let livekit_token = create_join_token(
-        &livekit_api_url,
-        &livekit_api_key,
-        &livekit_api_secret,
-        "Default",
-        "gstreamer",
-    ).await.unwrap();
     let (room, _event_ch) = Room::connect(
         livekit_url.to_str().unwrap(),
         livekit_token.as_str(),
@@ -95,7 +98,7 @@ async fn track_task(rtc_source: NativeVideoSource) {
             let (dst_y, dst_u, dst_v) = i420_buffer.data_mut();
 
             let caps = sample.caps().unwrap();
-            let video_info = gstreamer_video::VideoInfo::from_caps(&caps).unwrap();
+            let video_info = gstreamer_video::VideoInfo::from_caps(caps).unwrap();
             let sample_frame =
                 gstreamer_video::video_frame::VideoFrame::from_buffer_readable(
                     sample_buffer.copy(),
@@ -111,55 +114,6 @@ async fn track_task(rtc_source: NativeVideoSource) {
             dst_v.copy_from_slice(src_v);
 
             rtc_source.capture_frame(&*frame);
-        }
-    }
-}
-
-async fn create_join_token(
-    server_url: &OsStr,
-    api_key: &OsStr,
-    api_secret: &OsStr,
-    room_name: &str,
-    identity: &str,
-) -> anyhow::Result<String> {
-    let output = tokio::process::Command::new("livekit-cli")
-        .envs(HashMap::from([
-            (OsStr::new("LIVEKIT_API_KEY"), api_key),
-            (
-                OsStr::new("LIVEKIT_API_SECRET"),
-                api_secret,
-            ),
-            (
-                OsStr::new("LIVEKIT_SERVER_URL"),
-                server_url,
-            ),
-        ]))
-        .arg("create-token")
-        .arg("--join")
-        .arg("--room")
-        .arg(room_name)
-        .arg("--identity")
-        .arg(identity)
-        .output()
-        .await?;
-    match output.status.success() {
-        true => {
-            let stdout = String::from_utf8(output.stdout).unwrap();
-            for line in stdout.lines() {
-                if !line.starts_with("access token: ") {
-                    continue;
-                }
-                let token = line
-                    .split_whitespace()
-                    .nth(2)
-                    .ok_or(anyhow!("failed to find access_token in output: {}", line))?;
-                return Ok(token.to_string());
-            }
-            Err(anyhow!("failed to find access_token in output: {}", stdout))
-        }
-        false => {
-            let stderr = String::from_utf8(output.stderr).unwrap();
-            Err(anyhow!("failed to create join token: {}", stderr))
         }
     }
 }

@@ -16,4 +16,5 @@ gstreamer-rtp = "0.20.0"
 gstreamer-app = "0.20.0"
 livekit = { git = "https://github.com/livekit/client-sdk-rust.git", branch = "main" }
 livekit-webrtc = { git = "https://github.com/livekit/client-sdk-rust.git", branch = "main" }
+livekit-api = { git = "https://github.com/livekit/client-sdk-rust.git", branch = "main" }
 tokio = { version = "1.14.0", features = ["full"] }
