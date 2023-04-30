@@ -686,13 +686,16 @@ name = "gstreamer-livekit"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "byteorder",
  "gstreamer",
  "gstreamer-app",
+ "gstreamer-audio",
  "gstreamer-pbutils",
  "gstreamer-pbutils-sys",
  "gstreamer-rtp",
  "gstreamer-sys",
  "gstreamer-video",
+ "itertools",
  "livekit",
  "livekit-api",
  "livekit-webrtc",
