@@ -16,6 +16,7 @@ use livekit::webrtc::{
 use livekit_api::access_token::{AccessToken, VideoGrants};
 
 use byteorder::{BigEndian, ReadBytesExt};
+use gstreamer::State::Null;
 
 #[tokio::main]
 async fn main() {
@@ -105,11 +106,11 @@ async unsafe fn track_task(video_source: NativeVideoSource, audio_source: Native
                 let mut frame = vid_frame.lock().unwrap();
                 let i420_buffer = &mut frame.buffer;
                 let (dst_y, dst_u, dst_v) = i420_buffer.data_mut();
-                let caps = sample.caps().unwrap();
                 let mut ts = 0;
                 if let Some(meta) = buffer.meta::<ReferenceTimestampMeta>() {
                     ts = meta.timestamp().into_raw_value();
                 }
+                let caps = sample.caps().unwrap();
                 let video_info = gstreamer_video::VideoInfo::from_caps(caps).unwrap();
                 let sample_frame =
                     gstreamer_video::video_frame::VideoFrame::from_buffer_readable(
@@ -170,12 +171,14 @@ async unsafe fn track_task(video_source: NativeVideoSource, audio_source: Native
                 let mut plane_data = map.as_slice();
                 let mut data = vec![0i16; audio_buffer.n_samples() * 2];
                 let data_slice = data.as_mut_slice();
+                let data = data_slice.to_vec();
+                println!("data_vec len: {:?}", data.len());
                 ReadBytesExt::read_i16_into::<BigEndian>(&mut plane_data, data_slice).unwrap();
-                audio_source.capture_frame(AudioFrame {
-                    data: data_slice.to_vec(),
-                    sample_rate_hz: audio_buffer.rate(),
-                    num_channels: audio_buffer.channels() as usize,
-                    samples_per_channel: audio_buffer.n_samples() / 2,
+                audio_source.capture_frame(&AudioFrame {
+                    data,
+                    sample_rate: audio_buffer.rate(),
+                    num_channels: audio_buffer.channels(),
+                    samples_per_channel: audio_buffer.n_samples() as u32 / 2, // todo check size
                 });
                 Ok(gst::FlowSuccess::Ok)
             }).build(),
@@ -210,11 +213,11 @@ async unsafe fn track_task(video_source: NativeVideoSource, audio_source: Native
                     err.error(),
                     err.debug()
                 );
-                pipeline.set_state(gst::State::Null).unwrap();
+                pipeline.set_state(Null).unwrap();
             }
             _ => (),
         }
     }
 
-    pipeline.set_state(gst::State::Null).unwrap();
+    pipeline.set_state(Null).unwrap();
 }
