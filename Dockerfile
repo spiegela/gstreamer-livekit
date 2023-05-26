@@ -1,16 +1,15 @@
-ARG ARCH=amd64v8
+ARG ARCH=arm64v8
 
-FROM $ARCH/ubuntu:jammy AS base
-RUN apt update && apt install -y --no-install-recommends \
+FROM ubuntu:jammy AS base
+RUN apt update && apt install -y libssl-dev libx11-dev libgl1-mesa-dev libxext-dev \
     libgstreamer1.0-0 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-good1.0-dev \
-    libgstreamer-plugins-good1.0-0 gstreamer1.0-plugins-base-apps gstreamer1.0-plugins-good  \
-    libssl-dev libffi-dev libgtk-3-dev libglib2.0-dev openssl && \
-    rm -rf /var/lib/apt/lists/*
+        libgstreamer-plugins-good1.0-0 gstreamer1.0-plugins-base-apps gstreamer1.0-plugins-good  \
+        libssl-dev libffi-dev libgtk-3-dev libglib2.0-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 FROM base AS builder-base
-RUN apt update && apt install -y --no-install-recommends ca-certificates pkg-config git gcc g++ make openssl unzip \
-    libevent-dev libffi-dev libunwind-dev curl  && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt update && apt install -y curl unzip cmake build-essential pkg-config \
+    && rm -rf /var/lib/apt/lists/*
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain stable -y
 
 FROM builder-base AS builder-arm64v8
@@ -28,8 +27,6 @@ WORKDIR /usr/src/gst-livekit
 COPY . .
 ENV PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig
 RUN $HOME/.cargo/bin/cargo install --path .
-
-FROM $ARCH/ubuntu:jammy  as gst-livekit-base
 
 FROM base  as gst-livekit-arm64v8
 COPY --from=builder-arm64v8 /root/.cargo/bin/gstreamer-livekit /usr/local/bin/gstreamer-livekit
