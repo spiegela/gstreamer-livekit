@@ -8,16 +8,14 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.70"
 byteorder = "1.4.3"
-gstreamer = "0.20.3"
-gstreamer-sys = "0.20.0"
-gstreamer-video = "0.20.4"
-gstreamer-audio = { version =  "0.20.4", features = ["v1_16"] }
-gstreamer-pbutils = "0.20.0"
-gstreamer-pbutils-sys = "0.20.0"
-gstreamer-rtp = "0.20.0"
-gstreamer-app = "0.20.0"
-itertools = "0.10.5"
-livekit = { git = "https://github.com/livekit/client-sdk-rust.git", branch = "main" }
-livekit-webrtc = { git = "https://github.com/livekit/client-sdk-rust.git", branch = "main" }
-livekit-api = { git = "https://github.com/livekit/client-sdk-rust.git", branch = "main" }
+gstreamer = "0.21.0"
+gstreamer-app = "0.21.0"
+gstreamer-sys = "0.21.0"
+gstreamer-video = "0.21.0"
+gstreamer-pbutils = "0.21.0"
+gstreamer-pbutils-sys = "0.21.0"
+gstreamer-rtsp = "0.21.0"
+gstreamer-rtp = "0.21.0"
+gstreamer-webrtc = "0.21.0"
+gst-plugin-webrtc = { git = "https://github.com/spiegela/gst-plugin-rs.git", branch = "main" }
 tokio = { version = "1.14.0", features = ["full"] }
