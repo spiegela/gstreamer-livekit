@@ -17,5 +17,4 @@ gstreamer-pbutils-sys = "0.21.0"
 gstreamer-rtsp = "0.21.0"
 gstreamer-rtp = "0.21.0"
 gstreamer-webrtc = "0.21.0"
-gst-plugin-webrtc = { git = "https://github.com/spiegela/gst-plugin-rs.git", branch = "main" }
 tokio = { version = "1.14.0", features = ["full"] }

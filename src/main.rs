@@ -16,8 +16,9 @@ async fn main() {
     let pipeline = Pipeline::new();
     pipeline.set_state(State::Playing).unwrap();
 
-    let sink = parse_bin_from_description_full(
+    let sink0 = parse_bin_from_description_full(
         format!(r#"livekitwebrtcsink
+            name=lk0
             signaller::ws-url={url}
             signaller::api-key={api_key}
             signaller::secret-key={api_secret}
@@ -29,32 +30,50 @@ async fn main() {
         ParseFlags::NO_SINGLE_ELEMENT_BINS,
     ).expect("Unable to parse sink bin");
 
+    let sink1 = parse_bin_from_description_full(
+        format!(r#"livekitwebrtcsink
+            name=lk1
+            signaller::ws-url={url}
+            signaller::api-key={api_key}
+            signaller::secret-key={api_secret}
+            signaller::room-name=Default
+            signaller::identity=Gstreamer"#
+        ).as_str(),
+        false,
+        None,
+        ParseFlags::NO_SINGLE_ELEMENT_BINS,
+    ).expect("Unable to parse sink bin");
 
-    let pad_template = sink.pad_template("video_%u").expect("Unable to get sink pad template");
-    let patterns = vec!["smpte", "snow", "ball"];
-    let pads = patterns.iter().enumerate().map(|(i, _p)| {
-        let pad_name = format!("video_{}", i);
-        sink.request_pad(&pad_template, Some(pad_name.as_str()), None).expect("Unable to request sink_pad")
-    }).collect::<Vec<_>>();
+    let pad_template0 = sink0.pad_template("video_%u")
+        .expect("Unable to get sink pad template");
+    let sink_pad0 = sink0.request_pad(&pad_template0, Some("video_0"), None)
+        .expect("Unable to request sink_pad video_0");
 
-    pipeline.add(&sink).unwrap();
-    sink.sync_state_with_parent().unwrap();
+    let pad_template1 = sink1.pad_template("video_%u")
+        .expect("Unable to get sink pad template");
+    let _sink_pad1 = sink1.request_pad(&pad_template1, Some("video_0"), None)
+        .expect("Unable to request sink_pad");
 
-    for (i, p) in patterns.iter().enumerate() {
-        let src_text = format!(r#"videotestsrc pattern={} num-buffers=200000000 ! videoconvert ! video/x-raw ! queue"#, p);
-        let src_bin = parse_bin_from_description(
-            &src_text,
-            true,
-        ).expect("Unable to parse src bin");
+    pipeline.add(&sink0).unwrap();
+    pipeline.add(&sink1).unwrap();
+    sink0.sync_state_with_parent().unwrap();
+    sink1.sync_state_with_parent().unwrap();
 
-        let src_el: Element = src_bin.upcast();
-        pipeline.add(&src_el).expect("Unable to add src bin");
+    let src_text = r#"videotestsrc num-buffers=200000000 ! tee name = t
+            t. ! queue name=q0
+            t. ! queue name=q1"#;
+    let src_bin = parse_bin_from_description(
+        &src_text,
+        true,
+    ).expect("Unable to parse src bin");
 
-        let src_pad = src_el.static_pad("src").expect("No matching static pad");
-        src_pad.link(&pads[i]).expect("Unable to link pads");
+    let src_el: Element = src_bin.upcast();
+    pipeline.add(&src_el).expect("Unable to add src bin");
 
-        src_el.sync_state_with_parent().expect("Unable to sync src state with parent");
-    }
+    let src_pad = src_el.static_pad("src").expect("No matching static pad");
+    src_pad.link(&sink_pad0).expect("Unable to link pads");
+
+    src_el.sync_state_with_parent().expect("Unable to sync src state with parent");
 
     let bus = pipeline
         .bus()
